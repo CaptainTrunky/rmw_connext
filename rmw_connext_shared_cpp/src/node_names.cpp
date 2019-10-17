@@ -63,15 +63,7 @@ get_node_names(
 
   auto length = handles.length() + 1;  // add yourself
 
-  rcutils_allocator_t allocator = rcutils_get_default_allocator();
-  rcutils_ret_t rcutils_ret = rcutils_string_array_init(node_namespaces, length, &allocator);
-
-  if (rcutils_ret != RCUTILS_RET_OK) {
-    RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
-    return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
-  }
-
-  // Pre-allocate temporary buffer for all node names
+  // Pre-allocate temporary buffer for all node names & namespaces
   // Nodes that are not created by ROS 2 could provide empty names
   // Such names should not be returned
   rcutils_string_array_t tmp_names_list = rcutils_get_zero_initialized_string_array();
@@ -82,16 +74,31 @@ get_node_names(
     return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
   }
 
+  rcutils_string_array_t tmp_namespaces_list = rcutils_get_zero_initialized_string_array();
+  rcutils_ret = rcutils_string_array_init(&tmp_namespaces_list, length, &allocator);
+
+  if (rcutils_ret != RCUTILS_RET_OK) {
+    RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
+    return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
+  }
+  
   // add yourself
   tmp_names_list.data[0] = rcutils_strdup(participant_qos.participant_name.name, allocator);
-
-  int named_nodes_num = 1;
-
   if (!tmp_names_list.data[0]) {
-    RMW_SET_ERROR_MSG("could not allocate memory for node namespace");
+    RMW_SET_ERROR_MSG("could not allocate memory for node name");
     goto fail;
   }
-
+  
+  // TODO
+  //tmp_namespaces_list.data[0] = rcutils_strdup(participant_qos.participant_name.name, allocator);
+  //if (!tmp_namespaces_list.data[0]) {
+  //  RMW_SET_ERROR_MSG("could not allocate memory for node namespace");
+  //  goto fail;
+  //}
+  
+  int named_nodes_num = 1;
+  int named_namespaces_num = 1;
+ 
   for (auto i = 1; i < length; ++i) {
     DDS::ParticipantBuiltinTopicData pbtd;
     auto dds_ret = participant->get_discovered_participant_data(pbtd, handles[i - 1]);
@@ -123,7 +130,7 @@ get_node_names(
     // ignore discovered participants without a name
     if (name.empty()) {
       tmp_names_list.data[i] = nullptr;
-      node_namespaces->data[i] = nullptr;
+      tmp_namespaces_list.data[i] = nullptr;
       continue;
     }
 
@@ -133,13 +140,20 @@ get_node_names(
       goto fail;
     }
 
-    node_namespaces->data[i] = rcutils_strdup(namespace_.c_str(), allocator);
-    if (!node_namespaces->data[i]) {
+    ++named_nodes_num;
+    
+    if (namespace_.empty()) {
+      tmp_namespaces_list.data[i] = nullptr;
+      continue;
+    }
+    
+    tmp_namespaces_list.data[i] = rcutils_strdup(namespace_.c_str(), allocator);
+    if (!tmp_namespaces_list.data[i]) {
       RMW_SET_ERROR_MSG("could not allocate memory for node namespace");
       goto fail;
     }
-
-    ++named_nodes_num;
+    
+    ++named_namespaces_num;
   }
 
   // prepare actual output without empty names
@@ -161,6 +175,26 @@ get_node_names(
     RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
     return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
   }
+  
+  rcutils_allocator_t allocator = rcutils_get_default_allocator();
+  rcutils_ret_t rcutils_ret = rcutils_string_array_init(node_namespaces, length, &allocator);
+
+  if (rcutils_ret != RCUTILS_RET_OK) {
+    RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
+    return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
+  }
+  
+  for (auto i = 0; i < named_namespaces_num; ++i) {
+    node_namespaces->data[i] = rcutils_strdup(tmp_namespaces_list.data[i], allocator);
+    tmp_namespaces_list.data[i] = nullptr;
+  }
+  
+  rcutils_ret = rcutils_string_array_fini(&tmp_namespaces_list);
+  if (rcutils_ret != RCUTILS_RET_OK) {
+    RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
+    return rmw_convert_rcutils_ret_to_rmw_ret(rcutils_ret);
+  }
+  
   return RMW_RET_OK;
 
 fail:
@@ -187,6 +221,17 @@ fail:
   
   if (node_namespaces) {
     rcutils_ret = rcutils_string_array_fini(node_namespaces);
+    if (rcutils_ret != RCUTILS_RET_OK) {
+      RCUTILS_LOG_ERROR_NAMED(
+        "rmw_connext_cpp",
+        "failed to cleanup during error handling: %s", rcutils_get_error_string().str
+      );
+      rcutils_reset_error();
+    }
+  }
+  
+  if (tmp_namespaces_list) {
+    rcutils_ret = rcutils_string_array_fini(&tmp_namespaces_list);
     if (rcutils_ret != RCUTILS_RET_OK) {
       RCUTILS_LOG_ERROR_NAMED(
         "rmw_connext_cpp",
