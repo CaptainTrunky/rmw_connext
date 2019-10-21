@@ -89,15 +89,8 @@ get_node_names(
     goto fail;
   }
   
-  // TODO
-  //tmp_namespaces_list.data[0] = rcutils_strdup(participant_qos.participant_name.name, allocator);
-  //if (!tmp_namespaces_list.data[0]) {
-  //  RMW_SET_ERROR_MSG("could not allocate memory for node namespace");
-  //  goto fail;
-  //}
-  
   int named_nodes_num = 1;
-  int named_namespaces_num = 1;
+  int named_namespaces_num = 0;
  
   for (auto i = 1; i < length; ++i) {
     DDS::ParticipantBuiltinTopicData pbtd;
@@ -107,7 +100,9 @@ get_node_names(
     if (DDS::RETCODE_OK == dds_ret) {
       auto data = static_cast<unsigned char *>(pbtd.user_data.value.get_contiguous_buffer());
       std::vector<uint8_t> kv(data, data + pbtd.user_data.value.length());
+
       auto map = rmw::impl::cpp::parse_key_value(kv);
+
       auto name_found = map.find("name");
       auto ns_found = map.find("namespace");
 
@@ -147,7 +142,7 @@ get_node_names(
       continue;
     }
     
-    tmp_namespaces_list.data[i] = rcutils_strdup(namespace_.c_str(), allocator);
+    tmp_namespaces_list.data[named_namespaces_num] = rcutils_strdup(namespace_.c_str(), allocator);
     if (!tmp_namespaces_list.data[i]) {
       RMW_SET_ERROR_MSG("could not allocate memory for node namespace");
       goto fail;
@@ -177,7 +172,7 @@ get_node_names(
   }
   
   rcutils_allocator_t allocator = rcutils_get_default_allocator();
-  rcutils_ret_t rcutils_ret = rcutils_string_array_init(node_namespaces, length, &allocator);
+  rcutils_ret_t rcutils_ret = rcutils_string_array_init(node_namespaces, named_namespaces_num, &allocator);
 
   if (rcutils_ret != RCUTILS_RET_OK) {
     RMW_SET_ERROR_MSG(rcutils_get_error_string().str);
