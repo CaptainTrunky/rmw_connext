@@ -67,7 +67,8 @@ rmw_create_publisher(
   const rmw_node_t * node,
   const rosidl_message_type_support_t * type_supports,
   const char * topic_name,
-  const rmw_qos_profile_t * qos_profile)
+  const rmw_qos_profile_t * qos_profile,
+  const rmw_publisher_options_t * publisher_options)
 {
   if (!node) {
     RMW_SET_ERROR_MSG("node handle is null");
@@ -87,6 +88,11 @@ rmw_create_publisher(
 
   if (!qos_profile) {
     RMW_SET_ERROR_MSG("qos_profile is null");
+    return NULL;
+  }
+
+  if (!publisher_options) {
+    RMW_SET_ERROR_MSG("publisher_options is null");
     return NULL;
   }
 
@@ -132,6 +138,7 @@ rmw_create_publisher(
     RMW_SET_ERROR_MSG("failed to allocate publisher");
     goto fail;
   }
+  publisher->can_loan_messages = false;
 
   type_code = callbacks->get_type_code();
   if (!type_code) {
@@ -173,6 +180,7 @@ rmw_create_publisher(
     goto fail;
   }
   // Use a placement new to construct the PublisherListener in the preallocated buffer.
+  // cppcheck-suppress syntaxError
   RMW_TRY_PLACEMENT_NEW(publisher_listener, listener_buf, goto fail, ConnextPublisherListener, )
   listener_buf = nullptr;  // Only free the buffer pointer.
 
@@ -258,6 +266,7 @@ rmw_create_publisher(
     goto fail;
   }
   memcpy(const_cast<char *>(publisher->topic_name), topic_name, strlen(topic_name) + 1);
+  publisher->options = *publisher_options;
 
   if (!qos_profile->avoid_ros_namespace_conventions) {
     mangled_name =
@@ -412,6 +421,33 @@ rmw_publisher_assert_liveliness(const rmw_publisher_t * publisher)
   }
 
   return RMW_RET_OK;
+}
+
+rmw_ret_t
+rmw_borrow_loaned_message(
+  const rmw_publisher_t * publisher,
+  const rosidl_message_type_support_t * type_support,
+  void ** ros_message)
+{
+  (void) publisher;
+  (void) type_support;
+  (void) ros_message;
+
+  RMW_SET_ERROR_MSG("rmw_borrow_loaned_message not implemented for rmw_connext_cpp");
+  return RMW_RET_UNSUPPORTED;
+}
+
+rmw_ret_t
+rmw_return_loaned_message_from_publisher(
+  const rmw_publisher_t * publisher,
+  void * loaned_message)
+{
+  (void) publisher;
+  (void) loaned_message;
+
+  RMW_SET_ERROR_MSG(
+    "rmw_return_loaned_message_from_publisher not implemented for rmw_connext_cpp");
+  return RMW_RET_UNSUPPORTED;
 }
 
 rmw_ret_t
